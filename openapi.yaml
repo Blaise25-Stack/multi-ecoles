@@ -1,0 +1,1070 @@
+openapi: 3.0.3
+info:
+  title: SGS - Système de Gestion Scolaire API
+  description: |
+    API RESTful pour le Système de Gestion Scolaire (SGS).
+    Cette spécification définit tous les endpoints nécessaires pour le backend.
+    
+    ## Authentification
+    L'API utilise JWT Bearer tokens pour l'authentification.
+    Tous les endpoints (sauf /auth/login) requièrent un header Authorization valide.
+    
+    ## Pagination
+    Les endpoints de liste supportent la pagination avec les paramètres:
+    - `page`: numéro de page (défaut: 1)
+    - `per_page`: éléments par page (défaut: 20, max: 100)
+    - `sort_by`: champ de tri
+    - `sort_order`: asc ou desc
+    - `search`: recherche textuelle
+    
+    ## Codes d'erreur
+    - 400: Requête invalide
+    - 401: Non authentifié
+    - 403: Accès refusé
+    - 404: Ressource non trouvée
+    - 422: Erreur de validation
+    - 500: Erreur serveur
+  version: 1.0.0
+  contact:
+    name: Équipe SGS
+    email: dev@sgs.edu
+
+servers:
+  - url: http://localhost:3001/api
+    description: Serveur de développement
+  - url: https://api.sgs.edu
+    description: Serveur de production
+
+tags:
+  - name: Auth
+    description: Authentification et gestion des sessions
+  - name: Élèves
+    description: Gestion des élèves et inscriptions
+  - name: Comptabilité
+    description: Paiements, frais et dépenses
+  - name: RH
+    description: Enseignants, personnel, présences et salaires
+  - name: Configuration
+    description: Paramètres système et données de référence
+
+paths:
+  # ===== AUTHENTIFICATION =====
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Connexion utilisateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@sgs.edu
+                password:
+                  type: string
+                  format: password
+                  example: Password123
+      responses:
+        '200':
+          description: Connexion réussie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Récupérer le profil utilisateur courant
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profil utilisateur
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Déconnexion
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Déconnexion réussie
+
+  # ===== ÉLÈVES =====
+  /eleves:
+    get:
+      tags: [Élèves]
+      summary: Liste des élèves avec pagination
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/per_page'
+        - $ref: '#/components/parameters/search'
+        - name: classe_id
+          in: query
+          schema:
+            type: string
+        - name: niveau_id
+          in: query
+          schema:
+            type: string
+        - name: statut
+          in: query
+          schema:
+            type: string
+            enum: [inscrit, reinscrit, transfere, abandonne, diplome]
+        - name: sexe
+          in: query
+          schema:
+            type: string
+            enum: [M, F]
+      responses:
+        '200':
+          description: Liste paginée des élèves
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEleves'
+    post:
+      tags: [Élèves]
+      summary: Créer un nouvel élève
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EleveCreate'
+      responses:
+        '201':
+          description: Élève créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Eleve'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /eleves/{id}:
+    get:
+      tags: [Élèves]
+      summary: Récupérer un élève par ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Détails de l'élève
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Eleve'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Élèves]
+      summary: Mettre à jour un élève
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EleveUpdate'
+      responses:
+        '200':
+          description: Élève mis à jour
+    delete:
+      tags: [Élèves]
+      summary: Supprimer un élève
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '204':
+          description: Élève supprimé
+
+  /eleves/{id}/bulletin:
+    get:
+      tags: [Élèves]
+      summary: Récupérer le bulletin d'un élève
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+        - name: periode
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [trimestre1, trimestre2, trimestre3, semestre1, semestre2]
+      responses:
+        '200':
+          description: Bulletin de l'élève
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bulletin'
+
+  /inscriptions:
+    post:
+      tags: [Élèves]
+      summary: Inscrire un élève
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InscriptionCreate'
+      responses:
+        '201':
+          description: Inscription créée
+
+  # ===== COMPTABILITÉ =====
+  /comptabilite/frais:
+    get:
+      tags: [Comptabilité]
+      summary: Liste des frais scolaires
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Liste des frais
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FraisScolaire'
+
+  /comptabilite/paiements:
+    get:
+      tags: [Comptabilité]
+      summary: Liste des paiements
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/per_page'
+        - name: eleve_id
+          in: query
+          schema:
+            type: string
+        - name: date_debut
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_fin
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Liste paginée des paiements
+    post:
+      tags: [Comptabilité]
+      summary: Enregistrer un paiement
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaiementCreate'
+      responses:
+        '201':
+          description: Paiement enregistré
+
+  /comptabilite/factures/eleve/{id}:
+    get:
+      tags: [Comptabilité]
+      summary: Situation financière d'un élève
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      responses:
+        '200':
+          description: Facture de l'élève
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FactureEleve'
+
+  /comptabilite/depenses:
+    get:
+      tags: [Comptabilité]
+      summary: Liste des dépenses
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/per_page'
+      responses:
+        '200':
+          description: Liste paginée des dépenses
+    post:
+      tags: [Comptabilité]
+      summary: Enregistrer une dépense
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepenseCreate'
+      responses:
+        '201':
+          description: Dépense enregistrée
+
+  /comptabilite/rapports/tresorerie:
+    get:
+      tags: [Comptabilité]
+      summary: Rapport de trésorerie
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date_debut
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: date_fin
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Rapport de trésorerie
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RapportTresorerie'
+
+  # ===== RH =====
+  /rh/enseignants:
+    get:
+      tags: [RH]
+      summary: Liste des enseignants
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/page'
+        - $ref: '#/components/parameters/per_page'
+        - $ref: '#/components/parameters/search'
+        - name: statut
+          in: query
+          schema:
+            type: string
+            enum: [actif, conge, suspendu, demission, licencie]
+      responses:
+        '200':
+          description: Liste paginée des enseignants
+    post:
+      tags: [RH]
+      summary: Créer un enseignant
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnseignantCreate'
+      responses:
+        '201':
+          description: Enseignant créé
+
+  /rh/presences:
+    get:
+      tags: [RH]
+      summary: Liste des présences
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: employe_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Liste des présences
+    post:
+      tags: [RH]
+      summary: Enregistrer une présence
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresenceCreate'
+      responses:
+        '201':
+          description: Présence enregistrée
+
+  /rh/salaires:
+    get:
+      tags: [RH]
+      summary: Liste des salaires
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: mois
+          in: query
+          schema:
+            type: integer
+        - name: annee
+          in: query
+          schema:
+            type: integer
+        - name: est_paye
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Liste des salaires
+
+  /rh/salaires/{id}/payer:
+    patch:
+      tags: [RH]
+      summary: Marquer un salaire comme payé
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode_paiement]
+              properties:
+                mode_paiement:
+                  type: string
+                  enum: [virement, cheque, especes]
+                reference:
+                  type: string
+      responses:
+        '200':
+          description: Salaire payé
+
+  # ===== CONFIGURATION =====
+  /config/classes:
+    get:
+      tags: [Configuration]
+      summary: Liste des classes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: niveau_id
+          in: query
+          schema:
+            type: string
+        - name: annee_scolaire_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Liste des classes
+
+  /config/matieres:
+    get:
+      tags: [Configuration]
+      summary: Liste des matières
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Liste des matières
+
+  /dashboard/stats:
+    get:
+      tags: [Configuration]
+      summary: Statistiques du tableau de bord
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Statistiques
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardStats'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+    per_page:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        default: 20
+        maximum: 100
+    search:
+      name: search
+      in: query
+      schema:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: Non authentifié
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Ressource non trouvée
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Erreur de validation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+  schemas:
+    ApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+        message:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+
+    ValidationError:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            token:
+              type: string
+            refresh_token:
+              type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        nom:
+          type: string
+        prenom:
+          type: string
+        role:
+          type: string
+          enum: [super_admin, admin, comptable, rh, enseignant, parent, eleve]
+        permissions:
+          type: array
+          items:
+            type: object
+            properties:
+              module:
+                type: string
+              actions:
+                type: array
+                items:
+                  type: string
+        is_active:
+          type: boolean
+
+    Eleve:
+      type: object
+      properties:
+        id:
+          type: string
+        matricule:
+          type: string
+        nom:
+          type: string
+        prenom:
+          type: string
+        date_naissance:
+          type: string
+          format: date
+        lieu_naissance:
+          type: string
+        sexe:
+          type: string
+          enum: [M, F]
+        nationalite:
+          type: string
+        telephone:
+          type: string
+        email:
+          type: string
+        statut:
+          type: string
+          enum: [inscrit, reinscrit, transfere, abandonne, diplome]
+        classe_actuelle:
+          $ref: '#/components/schemas/Classe'
+        tuteurs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tuteur'
+
+    EleveCreate:
+      type: object
+      required: [nom, prenom, date_naissance, lieu_naissance, sexe, nationalite, tuteurs]
+      properties:
+        nom:
+          type: string
+        prenom:
+          type: string
+        date_naissance:
+          type: string
+          format: date
+        lieu_naissance:
+          type: string
+        sexe:
+          type: string
+          enum: [M, F]
+        nationalite:
+          type: string
+        telephone:
+          type: string
+        email:
+          type: string
+        adresse:
+          type: string
+        tuteurs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tuteur'
+
+    EleveUpdate:
+      type: object
+      properties:
+        nom:
+          type: string
+        prenom:
+          type: string
+        telephone:
+          type: string
+        email:
+          type: string
+        adresse:
+          type: string
+
+    Tuteur:
+      type: object
+      required: [nom, prenom, telephone, lien_parente]
+      properties:
+        nom:
+          type: string
+        prenom:
+          type: string
+        telephone:
+          type: string
+        email:
+          type: string
+        profession:
+          type: string
+        lien_parente:
+          type: string
+          enum: [pere, mere, tuteur, autre]
+
+    Classe:
+      type: object
+      properties:
+        id:
+          type: string
+        nom:
+          type: string
+        niveau_id:
+          type: string
+        capacite:
+          type: integer
+        effectif:
+          type: integer
+
+    InscriptionCreate:
+      type: object
+      required: [classe_id, annee_scolaire_id]
+      properties:
+        eleve_id:
+          type: string
+        eleve_data:
+          $ref: '#/components/schemas/EleveCreate'
+        classe_id:
+          type: string
+        annee_scolaire_id:
+          type: string
+        est_nouveau:
+          type: boolean
+
+    Bulletin:
+      type: object
+      properties:
+        eleve_id:
+          type: string
+        classe_id:
+          type: string
+        periode:
+          type: string
+        moyennes_par_matiere:
+          type: array
+          items:
+            type: object
+            properties:
+              matiere_id:
+                type: string
+              moyenne:
+                type: number
+              rang:
+                type: integer
+        moyenne_generale:
+          type: number
+        rang:
+          type: integer
+        effectif_classe:
+          type: integer
+        appreciation_generale:
+          type: string
+        decision:
+          type: string
+          enum: [admis, redouble, exclu, en_attente]
+
+    PaginatedEleves:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Eleve'
+            meta:
+              $ref: '#/components/schemas/PaginationMeta'
+
+    FraisScolaire:
+      type: object
+      properties:
+        id:
+          type: string
+        libelle:
+          type: string
+        type:
+          type: string
+          enum: [inscription, scolarite, cantine, transport, uniforme, autre]
+        montant:
+          type: number
+        obligatoire:
+          type: boolean
+        echeances:
+          type: array
+          items:
+            type: object
+            properties:
+              numero:
+                type: integer
+              montant:
+                type: number
+              date_limite:
+                type: string
+                format: date
+
+    PaiementCreate:
+      type: object
+      required: [eleve_id, frais_id, montant, mode_paiement]
+      properties:
+        eleve_id:
+          type: string
+        frais_id:
+          type: string
+        montant:
+          type: number
+        mode_paiement:
+          type: string
+          enum: [especes, cheque, virement, mobile_money, carte]
+        reference:
+          type: string
+        observations:
+          type: string
+
+    FactureEleve:
+      type: object
+      properties:
+        eleve_id:
+          type: string
+        total_du:
+          type: number
+        total_paye:
+          type: number
+        solde:
+          type: number
+        statut:
+          type: string
+          enum: [en_attente, partiel, complete, en_retard]
+
+    DepenseCreate:
+      type: object
+      required: [libelle, categorie, montant, date_depense, mode_paiement]
+      properties:
+        libelle:
+          type: string
+        categorie:
+          type: string
+          enum: [fournitures, equipement, maintenance, salaires, services, autre]
+        montant:
+          type: number
+        date_depense:
+          type: string
+          format: date
+        beneficiaire:
+          type: string
+        mode_paiement:
+          type: string
+          enum: [especes, cheque, virement, mobile_money, carte]
+        reference:
+          type: string
+
+    RapportTresorerie:
+      type: object
+      properties:
+        periode:
+          type: object
+          properties:
+            debut:
+              type: string
+              format: date
+            fin:
+              type: string
+              format: date
+        total_entrees:
+          type: number
+        total_sorties:
+          type: number
+        solde:
+          type: number
+        evolution_mensuelle:
+          type: array
+          items:
+            type: object
+            properties:
+              mois:
+                type: string
+              entrees:
+                type: number
+              sorties:
+                type: number
+              solde:
+                type: number
+
+    EnseignantCreate:
+      type: object
+      required: [nom, prenom, email, telephone, sexe, specialite, date_embauche, type_contrat, salaire_base]
+      properties:
+        nom:
+          type: string
+        prenom:
+          type: string
+        email:
+          type: string
+          format: email
+        telephone:
+          type: string
+        sexe:
+          type: string
+          enum: [M, F]
+        specialite:
+          type: string
+        diplome:
+          type: string
+        date_embauche:
+          type: string
+          format: date
+        type_contrat:
+          type: string
+          enum: [cdi, cdd, vacation, stage]
+        salaire_base:
+          type: number
+        matiere_ids:
+          type: array
+          items:
+            type: string
+
+    PresenceCreate:
+      type: object
+      required: [employe_id, employe_type, date, statut]
+      properties:
+        employe_id:
+          type: string
+        employe_type:
+          type: string
+          enum: [enseignant, personnel]
+        date:
+          type: string
+          format: date
+        heure_arrivee:
+          type: string
+          format: time
+        heure_depart:
+          type: string
+          format: time
+        statut:
+          type: string
+          enum: [present, absent, retard, conge, mission]
+        motif:
+          type: string
+
+    DashboardStats:
+      type: object
+      properties:
+        total_eleves:
+          type: integer
+        total_enseignants:
+          type: integer
+        total_classes:
+          type: integer
+        taux_recouvrement:
+          type: number
+        eleves_par_niveau:
+          type: array
+          items:
+            type: object
+            properties:
+              niveau:
+                type: string
+              count:
+                type: integer
+        recettes_par_mois:
+          type: array
+          items:
+            type: object
+            properties:
+              mois:
+                type: string
+              montant:
+                type: number
+        alertes:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              message:
+                type: string
+
+
+
